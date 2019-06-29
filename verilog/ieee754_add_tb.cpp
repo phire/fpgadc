@@ -1,4 +1,7 @@
 #include <stdlib.h>
+#include <cfenv>
+#include <cmath>
+#include <limits>
 #include "Vieee754_add.h"
 #include "verilated.h"
 
@@ -23,7 +26,15 @@ float ieee(uint32_t hex) {
     return ret;
 }
 
-void add(float a, float b, float expected, bool sub=false) {
+// force inlining off, otherwise calculation of expected might use wrong rounding mode
+void __attribute__ ((noinline)) add(float a, float b, bool sub=false) {
+    float expected = sub ? a - b : a + b;
+
+    // a standards compliant way to flush denormals to zero
+    if (std::fpclassify( expected ) == FP_SUBNORMAL) {
+        expected = copysignf(0.0f, expected);
+    }
+
     tb->src_a = hex(a);
     tb->src_b = hex(b);
     tb->subtract = sub ? 1 : 0;
@@ -47,19 +58,24 @@ int main(int argc, char **argv) {
 	// Create an instance of our module under test
 	tb = new Vieee754_add;
 
-    add(1.0f, 1.0f, 2.0f);
+    // Setup the round to zero rounding mode.
+    #pragma STDC FENV_ACCESS ON
+    std::fesetround(FE_TOWARDZERO);
 
-    add(1.0f, 2.0f, 3.0f);
-    add(1.0f, 2.0f, 3.0f);
-    add(0.5f, 0.5f, 1.0f);
-    add(3.0f, 0.1f, 3.1f);
-    add(3.0f, 300.0f, 303.0f);
-    add(1.0f, 0.5f, 0.5f, true);
-    add(1.0f, 0.999f, 1.999f);
-    add(1.0f, 0.999f, 1.0f - 0.999f, true);
-    add(1.0f, 1.0f, 0.0f, true);
-    add(1.000001f, 1.000001f, 2.000002f);
-    add(1.0f, 2.0f, -1.0f, true);
+    add(1.0f, 1.0f);
 
-    exit(EXIT_SUCCESS);
+    add(1.0f, 2.0f);
+    add(1.0f, 2.0f);
+    add(0.5f, 0.5f);
+    add(3.0f, 0.1f);
+    add(3.0f, 300.0f);
+    add(1.0f, 0.5f, true);
+    add(1.0f, 0.999f);
+    add(1.0f, 0.999f, true); // FIXME: this test case currently fails.
+    add(1.0f, 1.0f, true);
+    add(1.000001f, 1.000001f);
+    add(1.0f, 2.0f, true);
+    add(std::numeric_limits<float>::denorm_min(), std::numeric_limits<float>::denorm_min());
+
+    return 0;
 }

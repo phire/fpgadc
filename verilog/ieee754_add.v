@@ -1,6 +1,6 @@
 // 32 bit add/subtract
 
-// Not really tested. Doesn't round "correctly"
+// Not really tested. Only rounds towards zero. Flushes denormals. Doesn't handle infinities
 
 module ieee754_add (
     input clk,
@@ -40,10 +40,15 @@ wire [7:0] smaller_exponent = b_bigger ? exponent_a : exponent_b;
 // Calculate difference (will be between 0 and 256)
 wire [7:0] difference = bigger_exponent - smaller_exponent;
 
+// check for denormals
+wire denormal_bigger = bigger_exponent != 0;
+wire denormal_smaller = smaller_exponent != 0;
+
 // Swap significands to match above
 // At this point we also take the time to add the explicit 24th bit, which is always 1
-wire [23:0] bigger_significand = {1'b1, b_bigger ? significand_b : significand_a};
-wire [23:0] smaller_significand = {1'b1, b_bigger ? significand_a : significand_b};
+// Unless it's a denormal. then it's 0
+wire [23:0] bigger_significand = {denormal_bigger, b_bigger ? significand_b : significand_a};
+wire [23:0] smaller_significand = {denormal_smaller, b_bigger ? significand_a : significand_b};
 
 // Shift the smaller significant (This shifter is massive, the largest part of the step one)
 wire [23:0] smaller_significand_shifted = smaller_significand >> difference;
@@ -70,11 +75,19 @@ wire [24:0] result= do_substract ?
  */
 
 wire [4:0] shifted;
-wire [22:0] out_significand;
-ieee754_normalize it (result, out_significand, shifted);
+wire [22:0] shifted_significand;
+ieee754_normalize it (result, shifted_significand, shifted);
 
-wire zero = shifted == 31; // If none of the bits were set, force to zero
-wire [7:0] out_exponent = zero ? 8'h0 : (bigger_exponent + 1) - { 3'b000, shifted };
+// Adjust exponent by the size of the shift. Clamp to zero
+// If the shift size is 31, that means there were no one bits in the shift. Force to zero.
+wire [8:0] temp_subtract = (bigger_exponent + 1) - { 4'b000, shifted };
+wire zero = temp_subtract[8] | shifted == 31;
+wire [7:0] out_exponent = zero ? 8'h0 :temp_subtract[7:0];
+
+// flush denormals to zero
+wire [22:0] out_significand = (out_exponent == 0) ? 23'h0 : shifted_significand;
+
+// TODO: implement infinities
 
 // TODO: check the math on this. I'm not 100% sure
 wire out_sign = do_substract & b_bigger;
