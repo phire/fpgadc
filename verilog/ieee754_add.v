@@ -47,11 +47,20 @@ wire denormal_smaller = smaller_exponent != 0;
 // Swap significands to match above
 // At this point we also take the time to add the explicit 24th bit, which is always 1
 // Unless it's a denormal. then it's 0
+
 wire [23:0] bigger_significand = {denormal_bigger, b_bigger ? significand_b : significand_a};
 wire [23:0] smaller_significand = {denormal_smaller, b_bigger ? significand_a : significand_b};
 
 // Shift the smaller significant (This shifter is massive, the largest part of the step one)
-wire [23:0] smaller_significand_shifted = smaller_significand >> difference;
+wire [46:0] smaller_significand_shifted = {smaller_significand, 23'h0} >> difference;
+
+// We need to pad out both significands to twice the size (47 bits) so that any carries from the
+// lower bits of the smaller significand during a subtraction can be applied.
+// If the shift is bigger than 23, then there is no way any of the bits in the smaller significand
+// can effect the results.
+
+wire [46:0] bigger_significand_padded = {bigger_significand, 23'h0};
+
 
 /************
  * Step two: add or substract the significands
@@ -59,9 +68,9 @@ wire [23:0] smaller_significand_shifted = smaller_significand >> difference;
 
 // hint, when pipelining, the shifter from above can poke into this stage
 
-wire [24:0] result= do_substract ?
-    bigger_significand - smaller_significand_shifted :
-    bigger_significand + smaller_significand_shifted;
+wire [47:0] result = do_substract ?
+    bigger_significand_padded - smaller_significand_shifted :
+    bigger_significand_padded + smaller_significand_shifted;
 
 /***********
  * Step three: Normalize the result
@@ -74,14 +83,14 @@ wire [24:0] result= do_substract ?
  * The top one bit could be in any bit from 0 to 23.
  */
 
-wire [4:0] shifted;
+wire [5:0] shifted;
 wire [22:0] shifted_significand;
 ieee754_normalize it (result, shifted_significand, shifted);
 
 // Adjust exponent by the size of the shift. Clamp to zero
 // If the shift size is 31, that means there were no one bits in the shift. Force to zero.
-wire [8:0] temp_subtract = (bigger_exponent + 1) - { 4'b000, shifted };
-wire zero = temp_subtract[8] | shifted == 31;
+wire [8:0] temp_subtract = (bigger_exponent + 1) - { 3'b0, shifted };
+wire zero = temp_subtract[8] | shifted == 63;
 wire [7:0] out_exponent = zero ? 8'h0 :temp_subtract[7:0];
 
 // flush denormals to zero
@@ -93,6 +102,9 @@ wire [22:0] out_significand = (out_exponent == 0) ? 23'h0 : shifted_significand;
 wire out_sign = do_substract & b_bigger;
 
 always @(posedge clk) begin
+    //$display("  %b", bigger_significand);
+    //$display("- %b >> %d", smaller_significand_shifted, difference);
+    //$display("------------\n %b", result);
     dest <= { out_sign, out_exponent, out_significand };
 end
 

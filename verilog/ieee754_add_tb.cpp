@@ -71,7 +71,7 @@ int main(int argc, char **argv) {
     add(3.0f, 300.0f);
     add(1.0f, 0.5f, true);
     add(1.0f, 0.999f);
-    add(1.0f, 0.999f, true); // FIXME: this test case currently fails.
+    add(1.0f, 0.999f, true);
     add(1.0f, 1.0f, true);
     add(1.000001f, 1.000001f);
     add(1.0f, 2.0f, true);
