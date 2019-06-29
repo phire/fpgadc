@@ -2,6 +2,7 @@
 #include <cfenv>
 #include <cmath>
 #include <limits>
+#include <cstdint>
 #include "Vieee754_add.h"
 #include "verilated.h"
 
@@ -41,10 +42,10 @@ void __attribute__ ((noinline)) add(float a, float b, bool sub=false) {
     tick();
     tick();
     uint32_t out = tb->dest;
-    printf("%f %s %f = %f 0x%08x", a, sub ? "-" : "+", b, ieee(out), out);
+    printf("%f %s %f = %f | 0x%08x %s 0x%08x = 0x%08x", a, sub ? "-" : "+", b, ieee(out), hex(a), sub ? "-" : "+", hex(b), out);
     if (hex(expected) != out) {
         printf(" (expected %f 0x%08x)\n",  expected, hex(expected));
-        //exit(EXIT_FAILURE);
+        exit(EXIT_FAILURE);
     }
     else {
         printf("\n");
@@ -76,6 +77,16 @@ int main(int argc, char **argv) {
     add(1.000001f, 1.000001f);
     add(1.0f, 2.0f, true);
     add(std::numeric_limits<float>::denorm_min(), std::numeric_limits<float>::denorm_min());
+
+    srand(8);
+    for (int i = 0; i < 1000; i++) {
+        float a = ieee(rand());
+        float b = ieee(rand()); // Fixme: rand only goes upto MAX_INT, so all our numbers are positive.
+        printf("%d: ", i);
+        if (!isinff(a) && !isinff(b) &&!isinff(a+b) && !isnanf(a) && !isnanf(b) && !isnanf(a+b)) { // Infinities and NaNs are currently unsupported.
+            add(a, b, true);
+        }
+    }
 
     return 0;
 }

@@ -2,6 +2,12 @@
 
 // Not really tested. Only rounds towards zero. Flushes denormals. Doesn't handle infinities
 
+// known issues:
+// * 0x7f521e35 + 0x7f7ac3f4 = 0x7fe67114 (expected 0x7f7fffff)
+// * 0x0024e135 + 0x00bb13c1 = 0x00cd845b (expected 0x00dff4f6)
+// * 0x656a3a39 - 0x07ecfb54 = 0x656a3a39 (expected 0x656a3a38)
+// * 0x2d274378 - 0x65114598 = 0xe5114598 (expected 0xe5114597)
+
 module ieee754_add (
     input clk,
     input [31:0] src_a,
