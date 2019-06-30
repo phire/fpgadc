@@ -9,6 +9,7 @@
 Vieee754_add *tb;
 
 void tick() {
+    tb->eval();
     tb->clk = 1;
     tb->eval();
     tb->clk = 0;
@@ -39,7 +40,6 @@ void __attribute__ ((noinline)) add(float a, float b, bool sub=false) {
     tb->src_a = hex(a);
     tb->src_b = hex(b);
     tb->subtract = sub ? 1 : 0;
-    tick();
     tick();
     uint32_t out = tb->dest;
     printf("%f %s %f = %f | 0x%08x %s 0x%08x = 0x%08x", a, sub ? "-" : "+", b, ieee(out), hex(a), sub ? "-" : "+", hex(b), out);
