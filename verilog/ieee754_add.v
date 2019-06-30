@@ -105,7 +105,7 @@ wire [22:0] out_significand = (out_exponent == 0) ? 23'h0 : shifted_significand;
 // TODO: implement infinities
 
 // TODO: check the math on this. I'm not 100% sure
-wire out_sign = do_substract & b_bigger;
+wire out_sign = (!b_bigger & sign_a) | (b_bigger & !subtract & sign_b) | (b_bigger & subtract & !sign_b);
 
 always @(posedge clk) begin
     //$display("  %b", bigger_significand);
