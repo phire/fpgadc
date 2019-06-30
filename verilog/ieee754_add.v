@@ -3,10 +3,9 @@
 // Not really tested. Only rounds towards zero. Flushes denormals. Doesn't handle infinities
 
 // known issues:
-// * 0x7f521e35 + 0x7f7ac3f4 = 0x7fe67114 (expected 0x7f7fffff)
-// * 0x0024e135 + 0x00bb13c1 = 0x00cd845b (expected 0x00dff4f6)
-// * 0x656a3a39 - 0x07ecfb54 = 0x656a3a39 (expected 0x656a3a38)
-// * 0x2d274378 - 0x65114598 = 0xe5114598 (expected 0xe5114597)
+// * 0x7f521e35 + 0x7f7ac3f4 = 0x7fe67114 (expected 0x7f7fffff) - shouldn't this be infinity? why is it expecting max float?
+// * 0x0024e135 + 0x00bb13c1 = 0x00cd845b (expected 0x00dff4f6) - do I have an underflow on subtraction somewhere?
+// * 0x0dc7dca3 + 0x8df7120c = 0x0e68654b (expected 0x8cbcd5a4) - sign bit issues.
 
 module ieee754_add (
     input clk,
@@ -58,15 +57,22 @@ wire [23:0] bigger_significand = {denormal_bigger, b_bigger ? significand_b : si
 wire [23:0] smaller_significand = {denormal_smaller, b_bigger ? significand_a : significand_b};
 
 // Shift the smaller significant (This shifter is massive, the largest part of the step one)
-wire [46:0] smaller_significand_shifted = {smaller_significand, 23'h0} >> difference;
+// Keep two extra bits as "guard" and "round"
+wire [25:0] smaller_significand_shifted = {smaller_significand, 2'b0} >> difference;
 
-// We need to pad out both significands to twice the size (47 bits) so that any carries from the
-// lower bits of the smaller significand during a subtraction can be applied.
-// If the shift is bigger than 23, then there is no way any of the bits in the smaller significand
-// can effect the results.
+// If any of the discarded bits are one, the sticky bit will be set.
+wire [7:0] discarded_bits = difference >= 26 ? 26 : difference; // clamp
+wire [23:0] test_shift = smaller_significand[23:0] << (26 - discarded_bits);
+wire sticky_bit = test_shift != 0;
 
-wire [46:0] bigger_significand_padded = {bigger_significand, 23'h0};
-
+// We need some way of preserving the extra precision of the discarded bits.
+// For accurate rounding. IEEE754 specifies two guard bits and a sticky bit which we
+// will preserve on the smaller significand. The bigger significand gets padding bits.
+// We need to match the IEEE754 spec if we want the same result.
+// Even though we don't currently support anything other than truncate rounding, the sticky bit
+// is important for matching the result.
+wire [26:0] smaller_significand_guarded = {smaller_significand_shifted, sticky_bit};
+wire [26:0] bigger_significand_guarded = {bigger_significand, 3'h0};
 
 /************
  * Step two: add or substract the significands
@@ -74,9 +80,9 @@ wire [46:0] bigger_significand_padded = {bigger_significand, 23'h0};
 
 // hint, when pipelining, the shifter from above can poke into this stage
 
-wire [47:0] result = do_substract ?
-    bigger_significand_padded - smaller_significand_shifted :
-    bigger_significand_padded + smaller_significand_shifted;
+wire [27:0] result = do_substract ?
+    bigger_significand_guarded - smaller_significand_guarded :
+    bigger_significand_guarded + smaller_significand_guarded;
 
 /***********
  * Step three: Normalize the result
@@ -86,17 +92,19 @@ wire [47:0] result = do_substract ?
  * so our top one bit will either be in bit 23 or bit 24 (only when the exponents are equal).
  *
  * But the subtraction case is a nightmare.
- * The top one bit could be in any bit from 0 to 23.
+ * The top one bit could be in any bit from 0 to 23 (or the guard bits)
  */
 
-wire [5:0] shifted;
+ // TODO: implement round to nearest mode using guard bits
+
+wire [4:0] shifted;
 wire [22:0] shifted_significand;
 ieee754_normalize it (result, shifted_significand, shifted);
 
 // Adjust exponent by the size of the shift. Clamp to zero
 // If the shift size is 31, that means there were no one bits in the shift. Force to zero.
 wire [8:0] temp_subtract = (bigger_exponent + 1) - { 3'b0, shifted };
-wire zero = temp_subtract[8] | shifted == 63;
+wire zero = temp_subtract[8] | shifted == 31;
 wire [7:0] out_exponent = zero ? 8'h0 :temp_subtract[7:0];
 
 // flush denormals to zero
@@ -105,12 +113,14 @@ wire [22:0] out_significand = (out_exponent == 0) ? 23'h0 : shifted_significand;
 // TODO: implement infinities
 
 // TODO: check the math on this. I'm not 100% sure
+//       Update, it's wrong. Doesn't correctly handle subtractions where numbers share an exponent.
 wire out_sign = (!b_bigger & sign_a) | (b_bigger & !subtract & sign_b) | (b_bigger & subtract & !sign_b);
 
 always @(posedge clk) begin
-    //$display("  %b", bigger_significand);
-    //$display("- %b >> %d", smaller_significand_shifted, difference);
-    //$display("------------\n %b", result);
+    //  $display("\n  %b        exp %d", bigger_significand_guarded, bigger_exponent);
+    //  $display(" (%b)", smaller_significand);
+    //  $display("%c %b >> %3d exp %d (%d)", do_substract ? "-" : "+", smaller_significand_guarded, difference, smaller_exponent, discarded_bits);
+    //  $display("------------\n %b", result);
     dest <= { out_sign, out_exponent, out_significand };
 end
 
