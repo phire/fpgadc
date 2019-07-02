@@ -69,6 +69,7 @@ int main(int argc, char **argv) {
     #pragma STDC FENV_ACCESS ON
     std::fesetround(FE_TOWARDZERO);
 
+    mac(std::numeric_limits<float>::min(), std::numeric_limits<float>::min());
     mac(1.0f, 1.0f);
 
     mac(1.0f, 2.0f);

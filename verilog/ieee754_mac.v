@@ -40,6 +40,7 @@ wire sign_b = src_b[31];
 // calculate new exponent
 wire [9:0] sum_exponent = ({2'd0, exponent_a} + {2'd0, exponent_b}) - 10'd127; // bit 9 will be underflow, bit 8 will be overflow
 
+
 // Multiply significands (remembering the implicit one bit at bit 23)
 wire [47:0] result = { 1'b1, significand_a } * { 1'b1, significand_b };
 
@@ -55,19 +56,22 @@ wire [47:0] result = { 1'b1, significand_a } * { 1'b1, significand_b };
 
 wire needs_normalization = result[47];
 
-// TODO: override result with infinity based on exponent overflow
-// TODO: flush to zero on exponent underflow
-
 // Shift significand if needed
-wire [22:0] out_significand = needs_normalization ? result[46:24] : result[45:23];
+wire [22:0] normalized_significand = needs_normalization ? result[46:24] : result[45:23];
 // increment exponent if needed.
-wire [7:0]  out_exponent = needs_normalization ? sum_exponent[7:0] + 1 : sum_exponent[7:0];
+wire [9:0]  normalized_exponent = needs_normalization ? sum_exponent + 1 : sum_exponent;
+
+wire overflow = normalized_exponent[8];
+wire underflow = normalized_exponent[9];
+
+wire [22:0] out_significand = underflow ? 23'h0 : (overflow ? 23'h7fffff : normalized_significand);
+wire [7:0]  out_exponent = underflow ? 8'h0 : (overflow ? 8'hfe : normalized_exponent[7:0]);
 
 wire out_sign = sign_a ^ sign_b;
 
 always @(posedge clk) begin
-    $display("%b", result);
-    $display("%b", out_significand);
+    //$display("%b", result);
+    //$display("%b", out_significand);
     dest <= { out_sign, out_exponent, out_significand };
 end
 
